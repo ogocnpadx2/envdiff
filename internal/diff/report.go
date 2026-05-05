@@ -3,7 +3,6 @@ package diff
 import (
 	"fmt"
 	"io"
-	"strings"
 )
 
 const (
@@ -11,49 +10,46 @@ const (
 	colorRed    = "\033[31m"
 	colorYellow = "\033[33m"
 	colorGreen  = "\033[32m"
+	colorBold   = "\033[1m"
 )
 
 // PrintReport writes a human-readable diff report to w.
-// leftName and rightName are labels for the two env files being compared.
-func PrintReport(w io.Writer, result Result, leftName, rightName string, color bool) {
-	if result.IsClean() {
-		fprintf(w, color, colorGreen, "✔ No differences found between %s and %s\n", leftName, rightName)
+func PrintReport(w io.Writer, leftName, rightName string, r Report) {
+	if r.Clean() {
+		fprintf(w, "%s✔ No differences found between %s and %s%s\n",
+			colorGreen, leftName, rightName, colorReset)
 		return
 	}
 
-	if len(result.MissingInRight) > 0 {
-		fprintf(w, color, colorRed, "Keys in %s but missing in %s:\n", leftName, rightName)
-		for _, k := range result.MissingInRight {
-			fprintf(w, color, colorRed, "  - %s\n", k)
+	fprintf(w, "%s%senvdiff: %s ↔ %s%s\n\n", colorBold, colorReset, leftName, rightName, colorReset)
+
+	if len(r.MissingInRight) > 0 {
+		fprintf(w, "%s%s Missing in %s:%s\n", colorRed, colorBold, rightName, colorReset)
+		for _, k := range r.MissingInRight {
+			fprintf(w, "  %s- %s%s\n", colorRed, k, colorReset)
 		}
+		fprintf(w, "\n")
 	}
 
-	if len(result.MissingInLeft) > 0 {
-		fprintf(w, color, colorRed, "Keys in %s but missing in %s:\n", rightName, leftName)
-		for _, k := range result.MissingInLeft {
-			fprintf(w, color, colorRed, "  - %s\n", k)
+	if len(r.MissingInLeft) > 0 {
+		fprintf(w, "%s%s Missing in %s:%s\n", colorYellow, colorBold, leftName, colorReset)
+		for _, k := range r.MissingInLeft {
+			fprintf(w, "  %s+ %s%s\n", colorYellow, k, colorReset)
 		}
+		fprintf(w, "\n")
 	}
 
-	if len(result.Mismatched) > 0 {
-		fprintf(w, color, colorYellow, "Mismatched values:\n")
-		for _, m := range result.Mismatched {
-			line := fmt.Sprintf("  ~ %s\n      %s: %s\n      %s: %s\n",
-				m.Key,
-				leftName, m.LeftValue,
-				rightName, m.RightValue,
-			)
-			fprintf(w, color, colorYellow, "%s", line)
+	if len(r.Mismatched) > 0 {
+		fprintf(w, "%s%s Value mismatches:%s\n", colorBold, colorYellow, colorReset)
+		for _, m := range r.Mismatched {
+			fprintf(w, "  %s~ %s%s\n", colorYellow, m.Key, colorReset)
+			fprintf(w, "      %s: %q\n", leftName, m.LeftVal)
+			fprintf(w, "      %s: %q\n", rightName, m.RightVal)
 		}
+		fprintf(w, "\n")
 	}
 }
 
-func fprintf(w io.Writer, useColor bool, clr, format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	if useColor && !strings.HasPrefix(clr, "") {
-		msg = clr + msg + colorReset
-	} else if useColor {
-		msg = clr + msg + colorReset
-	}
-	fmt.Fprint(w, msg)
+func fprintf(w io.Writer, format string, args ...interface{}) {
+	fmt.Fprintf(w, format, args...)
 }
