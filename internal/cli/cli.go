@@ -1,84 +1,99 @@
 package cli
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/user/envdiff/internal/diff"
 	"github.com/user/envdiff/internal/parser"
 )
 
-// Config holds parsed CLI options.
-type Config struct {
-	LeftFile  string
-	RightFile string
-	Quiet     bool
-	NoColor   bool
-}
-
-// Run is the entrypoint for the CLI. It parses args, runs the diff, and writes
-// output to out/errOut. Returns a non-nil error when the program should exit
-// with a non-zero status.
-func Run(args []string, out, errOut io.Writer) error {
-	cfg, err := parseArgs(args, errOut)
-	if err != nil {
-		return err
+// Run is the entry point for the CLI. It parses args, runs the diff, and
+// writes output to w. It returns a non-zero exit code when differences exist.
+func Run(args []string, w io.Writer) int {
+	flags, ok := parseArgs(args, w)
+	if !ok {
+		return 2
 	}
 
-	left, err := parser.ParseFile(cfg.LeftFile)
+	left, err := parser.ParseFile(flags.leftFile)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", cfg.LeftFile, err)
+		fmt.Fprintf(w, "error reading %s: %v\n", flags.leftFile, err)
+		return 2
+	}
+	right, err := parser.ParseFile(flags.rightFile)
+	if err != nil {
+		fmt.Fprintf(w, "error reading %s: %v\n", flags.rightFile, err)
+		return 2
 	}
 
-	right, err := parser.ParseFile(cfg.RightFile)
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", cfg.RightFile, err)
-	}
+	result := diff.Compare(left, right)
 
-	report := diff.Compare(left, right)
-
-	if cfg.Quiet {
-		if !report.Clean() {
-			return errors.New("environments differ")
+	if flags.quiet {
+		if result.IsClean() {
+			return 0
 		}
-		return nil
+		return 1
 	}
 
-	diff.PrintReport(out, cfg.LeftFile, cfg.RightFile, report)
+	fmt := flags.format
+	leftName := filepath.Base(flags.leftFile)
+	rightName := filepath.Base(flags.rightFile)
 
-	if !report.Clean() {
-		return errors.New("environments differ")
+	if err := diff.PrintFormatted(w, result, leftName, rightName, fmt); err != nil {
+		fmt2 := fmt // shadow to avoid collision
+		_ = fmt2
+		fmt2 = diff.FormatText
+		_ = fmt2
+		// fallback: write error
+		io.WriteString(w, "error formatting output: "+err.Error()+"\n")
+		return 2
 	}
-	return nil
+
+	if !result.IsClean() {
+		return 1
+	}
+	return 0
 }
 
-func parseArgs(args []string, errOut io.Writer) (*Config, error) {
+type cliFlags struct {
+	leftFile  string
+	rightFile string
+	quiet     bool
+	format    diff.OutputFormat
+}
+
+func parseArgs(args []string, w io.Writer) (cliFlags, bool) {
 	fs := flag.NewFlagSet("envdiff", flag.ContinueOnError)
-	fs.SetOutput(errOut)
+	fs.SetOutput(w)
 
-	quiet := fs.Bool("quiet", false, "suppress output; exit 1 if differences found")
-	noColor := fs.Bool("no-color", false, "disable colored output")
-
-	fs.Usage = func() {
-		fmt.Fprintf(errOut, "Usage: envdiff [options] <file1> <file2>\n\nOptions:\n")
-		fs.PrintDefaults()
-	}
+	quiet := fs.Bool("quiet", false, "exit with code only, no output")
+	formatStr := fs.String("format", "text", "output format: text, json, markdown")
 
 	if err := fs.Parse(args); err != nil {
-		return nil, err
+		return cliFlags{}, false
 	}
 
-	if fs.NArg() != 2 {
-		fs.Usage()
-		return nil, errors.New("exactly two .env files are required")
+	if fs.NArg() < 2 {
+		fmt.Fprintln(w, "usage: envdiff [--quiet] [--format=text|json|markdown] <left.env> <right.env>")
+		return cliFlags{}, false
 	}
 
-	return &Config{
-		LeftFile:  fs.Arg(0),
-		RightFile: fs.Arg(1),
-		Quiet:     *quiet,
-		NoColor:   *noColor,
-	}, nil
+	fmt2, err := diff.ParseFormat(*formatStr)
+	if err != nil {
+		fmt.Fprintln(w, err)
+		return cliFlags{}, false
+	}
+
+	_ = os.Stderr // suppress unused import
+
+	return cliFlags{
+		leftFile:  fs.Arg(0),
+		rightFile: fs.Arg(1),
+		quiet:     *quiet,
+		format:    fmt2,
+	}, true
 }

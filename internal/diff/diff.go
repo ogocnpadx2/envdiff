@@ -1,30 +1,29 @@
 package diff
 
-// Result holds the comparison outcome between two env files.
-type Result struct {
-	// MissingInRight contains keys present in left but absent in right.
-	MissingInRight []string
-	// MissingInLeft contains keys present in right but absent in left.
-	MissingInLeft []string
-	// Mismatched contains keys present in both files but with different values.
-	Mismatched []MismatchedKey
-}
+import "sort"
 
-// MismatchedKey represents a key whose value differs between two env files.
+// MismatchedKey holds a key whose value differs between the two env files.
 type MismatchedKey struct {
 	Key        string
 	LeftValue  string
 	RightValue string
 }
 
-// IsClean returns true when there are no differences between the two env maps.
+// Result holds the full comparison output.
+type Result struct {
+	MissingInLeft  []string
+	MissingInRight []string
+	Mismatched     []MismatchedKey
+}
+
+// IsClean returns true when there are no differences.
 func (r Result) IsClean() bool {
-	return len(r.MissingInRight) == 0 &&
-		len(r.MissingInLeft) == 0 &&
+	return len(r.MissingInLeft) == 0 &&
+		len(r.MissingInRight) == 0 &&
 		len(r.Mismatched) == 0
 }
 
-// Compare takes two parsed env maps and returns a Result describing their differences.
+// Compare compares two maps of env variables and returns a Result.
 func Compare(left, right map[string]string) Result {
 	var result Result
 
@@ -32,9 +31,7 @@ func Compare(left, right map[string]string) Result {
 		rv, ok := right[k]
 		if !ok {
 			result.MissingInRight = append(result.MissingInRight, k)
-			continue
-		}
-		if lv != rv {
+		} else if lv != rv {
 			result.Mismatched = append(result.Mismatched, MismatchedKey{
 				Key:        k,
 				LeftValue:  lv,
@@ -49,25 +46,19 @@ func Compare(left, right map[string]string) Result {
 		}
 	}
 
-	sortStrings(result.MissingInRight)
 	sortStrings(result.MissingInLeft)
+	sortStrings(result.MissingInRight)
 	sortMismatched(result.Mismatched)
 
 	return result
 }
 
 func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
+	sort.Strings(s)
 }
 
 func sortMismatched(m []MismatchedKey) {
-	for i := 1; i < len(m); i++ {
-		for j := i; j > 0 && m[j].Key < m[j-1].Key; j-- {
-			m[j], m[j-1] = m[j-1], m[j]
-		}
-	}
+	sort.Slice(m, func(i, j int) bool {
+		return m[i].Key < m[j].Key
+	})
 }
