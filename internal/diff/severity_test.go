@@ -42,6 +42,19 @@ func TestClassifyResult_MissingInRight(t *testing.T) {
 	}
 }
 
+func TestClassifyResult_MissingInLeft(t *testing.T) {
+	r := Result{MissingInLeft: []string{"DB_HOST", "DB_PORT"}}
+	entries := ClassifyResult(r)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	for _, e := range entries {
+		if e.Severity != SeverityWarning {
+			t.Errorf("key %q: expected Warning, got %s", e.Key, e.Severity)
+		}
+	}
+}
+
 func TestClassifyResult_Mismatched(t *testing.T) {
 	r := Result{
 		Mismatched: []MismatchedKey{
