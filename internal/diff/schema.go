@@ -13,8 +13,10 @@ type Schema struct {
 }
 
 // LoadSchema reads a schema file where each line is:
-//   KEY
-//   KEY=description of what this key is for
+//
+//	KEY
+//	KEY=description of what this key is for
+//
 // Blank lines and lines starting with '#' are ignored.
 func LoadSchema(path string) (*Schema, error) {
 	f, err := os.Open(path)
@@ -63,6 +65,27 @@ func ValidateAgainstSchema(schema *Schema, env map[string]string) []SchemaViolat
 	}
 	sortViolations(violations)
 	return violations
+}
+
+// ExtraKeys returns keys present in env that are not defined in the schema.
+// This is useful for detecting undocumented or unexpected environment variables.
+func ExtraKeys(schema *Schema, env map[string]string) []string {
+	var extras []string
+	for key := range env {
+		if _, ok := schema.Keys[key]; !ok {
+			extras = append(extras, key)
+		}
+	}
+	sortStrings(extras)
+	return extras
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
 }
 
 func sortViolations(v []SchemaViolation) {
